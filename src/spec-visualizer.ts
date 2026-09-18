@@ -18,7 +18,8 @@ export interface MarbleEvent {
   value?: string;
 }
 
-export type SpanKind = 'subscription' | 'window' | 'cancelled';
+/** 'queued': an outer value waited for an earlier inner to finish (concatMap). */
+export type SpanKind = 'subscription' | 'window' | 'cancelled' | 'queued';
 
 export interface Span {
   from: number;
@@ -344,21 +345,34 @@ function runHigherOrderSpec(spec: HigherOrderSpec): SpecState {
   const frames = frameCount(spec, [source, capture.actual, capture.expected, ...innerRuns.map((run) => run.events)]);
 
   // One compact row per inner subscription: its lifetime from the scheduler's
-  // subscription log, its values from the tap above.
+  // subscription log, its values from the tap above. When every outer value
+  // spawned exactly one inner (mergeMap, switchMap, concatMap), the j-th outer
+  // value is the one that spawned the j-th inner; if it was subscribed later
+  // than it arrived, the value waited in a queue and the row shows that.
+  const outerValues = source.filter((e) => e.kind === 'next');
+  const oneInnerPerValue = outerValues.length === innerLogs.length;
   const innerLanes = innerLogs.map((log, j): SpecLane => {
     const run = innerRuns[j];
+    const outerFrame = oneInnerPerValue ? outerValues[j].frame : log.subscribedFrame;
+    const queued = outerFrame < log.subscribedFrame;
     return {
       label: `inner ${j + 1}`,
-      detail: run === undefined ? '' : `for ${run.outerValue}`,
+      detail:
+        run === undefined
+          ? ''
+          : `for ${run.outerValue}${queued ? ` · queued ${outerFrame}→${log.subscribedFrame}` : ''}`,
       marbles: spec.inner.marbles,
       marblesFrom: log.subscribedFrame,
       events: run?.events ?? [],
       expected: [],
-      spans: subscriptionSpans([log], frames),
+      spans: [
+        ...(queued ? [{ from: outerFrame, to: log.subscribedFrame, kind: 'queued' as const }] : []),
+        ...subscriptionSpans([log], frames),
+      ],
       reveal: 'playhead',
       height: 72,
       depth: 1,
-      dropFrom: { lane: 0, frame: log.subscribedFrame },
+      dropFrom: { lane: 0, frame: outerFrame },
       emitArrows: true,
     };
   });
@@ -604,6 +618,15 @@ function renderSpan(
   const ended = span.to <= state.playhead;
   // The bar grows one frame per tick until it reaches its end.
   const visibleTo = Math.min(span.to, Math.max(span.from, state.playhead));
+
+  if (span.kind === 'queued') {
+    // A value waiting for its turn: a dotted stretch on the baseline from the
+    // frame it arrived to the frame its inner was subscribed.
+    const wait = upsert(root, `${id}-bar`, 'rx-window is-queued');
+    place(wait, { left: x0, top: g.base - 1, width: frameCenter(visibleTo, config) - x0 });
+    wait.hidden = !started;
+    return;
+  }
 
   const above = geometry[laneIndex - 1];
   if (above !== undefined) {

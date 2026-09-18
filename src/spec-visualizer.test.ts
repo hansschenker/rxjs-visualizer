@@ -163,6 +163,52 @@ describe('runMarbleSpec: switchMap with inner lanes (through the real TestSchedu
   });
 });
 
+describe('runMarbleSpec: concatMap with a queued inner (through the real TestScheduler)', () => {
+  const state = runMarbleSpec(specs.concatMap);
+  const [, , inner1, inner2, inner3, output] = state.lanes;
+
+  it('runs inners one after another', () => {
+    expect(state.frames).toBe(20);
+    expect(inner1.spans).toEqual([{ from: 2, to: 7, kind: 'subscription' }]);
+    expect(inner2.spans).toEqual([{ from: 8, to: 13, kind: 'subscription' }]);
+    expect(inner2.events).toEqual([next(8, '30'), next(10, '30'), next(12, '30'), complete(13)]);
+  });
+
+  it('shows the third outer value queued from its arrival at 11 until its inner starts at 13', () => {
+    expect(inner3.dropFrom).toEqual({ lane: 0, frame: 11 });
+    expect(inner3.spans).toEqual([
+      { from: 11, to: 13, kind: 'queued' },
+      { from: 13, to: 18, kind: 'subscription' },
+    ]);
+    expect(inner3.detail).toBe('for 5 · queued 11→13');
+    expect(inner3.events).toEqual([next(13, '50'), next(15, '50'), next(17, '50'), complete(18)]);
+  });
+
+  it('matches the concatenated output', () => {
+    const wanted = [
+      next(2, '10'),
+      next(4, '10'),
+      next(6, '10'),
+      next(8, '30'),
+      next(10, '30'),
+      next(12, '30'),
+      next(13, '50'),
+      next(15, '50'),
+      next(17, '50'),
+      complete(19),
+    ];
+    expect(output.events).toEqual(wanted);
+    expect(output.expected).toEqual(wanted);
+  });
+
+  it('does not mark mergeMap or switchMap inners as queued', () => {
+    const hasQueued = (name: 'mergeMap' | 'switchMap'): boolean =>
+      runMarbleSpec(specs[name]).lanes.some((lane) => lane.spans.some((span) => span.kind === 'queued'));
+    expect(hasQueued('mergeMap')).toBe(false);
+    expect(hasQueued('switchMap')).toBe(false);
+  });
+});
+
 describe('updateSpec', () => {
   const base: SpecState = { title: 't', lanes: [], frames: 3, playhead: -1 };
 

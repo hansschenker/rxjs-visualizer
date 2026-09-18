@@ -1,4 +1,4 @@
-import { auditTime, debounceTime, map, mergeMap, switchMap, type Observable } from 'rxjs';
+import { auditTime, concatMap, debounceTime, map, mergeMap, switchMap, type Observable } from 'rxjs';
 import type { MarbleSpec } from './spec-visualizer.ts';
 
 /**
@@ -144,6 +144,42 @@ export const specs = {
     },
     project: (value: unknown, e2: Observable<unknown>) => e2.pipe(map((i) => Number(i) * Number(value))),
     flatten: (project) => switchMap(project),
+  },
+
+  /**
+   *   it('should map-and-flatten each item to an Observable', () => {
+   *     testScheduler.run(({ hot, cold, expectObservable, expectSubscriptions }) => {
+   *       const e1 = hot('   --1-----3--5-------|');
+   *       const e1subs = '   ^------------------!';
+   *       const e2 = cold('  x-x-x|              ', { x: 10 });
+   *       const expected = ' --x-x-x-y-y-yz-z-z-|';
+   *       const values = { x: 10, y: 30, z: 50 };
+   *
+   *       const result = e1.pipe(concatMap((x) => e2.pipe(map((i) => i * parseInt(x)))));
+   *
+   *       expectObservable(result).toBe(expected, values);
+   *       expectSubscriptions(e1.subscriptions).toBe(e1subs);
+   *     });
+   *   });
+   *
+   * The third outer value (5) arrives at frame 11 while the second inner is
+   * still running; concatMap queues it and subscribes its inner at 13.
+   */
+  concatMap: {
+    kind: 'higherOrder',
+    title: 'concatMap: should map-and-flatten each item to an Observable',
+    source: '   --1-----3--5-------|',
+    subscriptions: '   ^------------------!',
+    expected: ' --x-x-x-y-y-yz-z-z-|',
+    expectedValues: { x: 10, y: 30, z: 50 },
+    operatorLabel: 'concatMap(x => e2.pipe(map(i => i * parseInt(x))))',
+    inner: {
+      marbles: '  x-x-x|              ',
+      values: { x: 10 },
+    },
+    project: (value: unknown, e2: Observable<unknown>) =>
+      e2.pipe(map((i) => Number(i) * parseInt(String(value), 10))),
+    flatten: (project) => concatMap(project),
   },
 } satisfies Record<string, MarbleSpec>;
 

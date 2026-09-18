@@ -272,6 +272,13 @@ body {
   border-top: 2px dashed #7a7772;
 }
 
+/* An outer value waiting for an earlier inner to finish (concatMap). */
+.rx-window.is-queued {
+  height: 0;
+  background: transparent;
+  border-top: 2px dotted #b0aca5;
+}
+
 .rx-cross {
   position: absolute;
   font-size: 16px;
