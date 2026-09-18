@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>rxjs-visualizer · glitch</title>
+  </head>
+  <body>
+    <nav class="rx-nav">
+      <a href="./index.html">Diamond</a>
+      <a class="is-current" href="./glitch.html">Glitch (work in progress)</a>
+    </nav>
+    <p class="rx-note">
+      Same diamond, but the sink uses <code>combineLatest</code>: it re-emits whenever either branch changes, so
+      for source value 2 it first sees the new left with the old right (14) and only then the correct 24.
+    </p>
+    <div id="app"></div>
+    <script type="module" src="/src/glitch.ts"></script>
+  </body>
+</html>
