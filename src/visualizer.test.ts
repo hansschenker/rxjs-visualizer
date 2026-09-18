@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { Subject, map, of } from 'rxjs';
-import { hasPendingReveals, trackSource, update, visualizedMVU, type Action, type VisualizerState } from './visualizer.ts';
+import {
+  DEFAULT_RENDER_CONFIG,
+  hasPendingReveals,
+  pxPerStep,
+  timeX,
+  trackSource,
+  update,
+  visualizedMVU,
+  type Action,
+  type VisualizerState,
+} from './visualizer.ts';
 
 const lanes = ['source', 'left', 'right', 'sink'];
 const initial: VisualizerState = { lanes, columns: [], startTime: 1000 };
@@ -68,6 +78,21 @@ describe('hasPendingReveals', () => {
     expect(hasPendingReveals(base, 0)).toBe(true);
     expect(hasPendingReveals(update(base, reveal(0)), 0)).toBe(false);
     expect(hasPendingReveals(base, 1)).toBe(false);
+  });
+});
+
+describe('time axis', () => {
+  const config = { ...DEFAULT_RENDER_CONFIG, startXOffset: 250, stepMs: 800, timeScale: 200 / 800 };
+
+  it('one band is one step wide', () => {
+    expect(pxPerStep(config)).toBe(200);
+  });
+
+  it('maps time linearly from the left edge of the timeline (page coordinates)', () => {
+    // Band k spans [250 + 200k, 250 + 200(k + 1)); a tick event starts at its left edge.
+    expect(timeX(0, config)).toBe(250);
+    expect(timeX(800, config)).toBe(450);
+    expect(timeX(1600, config)).toBe(650);
   });
 });
 

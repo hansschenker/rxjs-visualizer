@@ -14,6 +14,7 @@ import {
   takeWhile,
   timer,
   withLatestFrom,
+  zip,
 } from 'rxjs';
 import {
   DEFAULT_RENDER_CONFIG,
@@ -28,7 +29,7 @@ import {
 } from './visualizer.ts';
 
 // ==========================================
-// DEMO: the diamond dependency glitch
+// DEMO: a diamond pipeline (source -> left/right -> sink)
 // ==========================================
 
 /** One source value, one arrow step, and one reveal all take this long. */
@@ -36,6 +37,14 @@ const STEP_MS = 800;
 const SOURCE_VALUES = 2;
 /** Horizontal distance between two source values, whatever the speed. */
 const PX_PER_STEP = 200;
+/**
+ * false: the sink uses `zip`, which pairs each source value's left and right
+ *        results, so every column is a clean top-to-bottom flow.
+ * true:  the sink uses `combineLatest`, which exposes the diamond glitch
+ *        (for source value 2 the sink emits 14 before 24).
+ * Left off until the coordinate system is settled.
+ */
+const SHOW_GLITCH = false;
 
 const LANES = {
   source: `1. Source (every ${STEP_MS}ms)`,
@@ -88,7 +97,9 @@ const left$ = trackedSource$.pipe(visualizedMVU(LANES.left, dispatcher$, map((x)
 
 const right$ = trackedSource$.pipe(visualizedMVU(LANES.right, dispatcher$, map((x) => x * 10)));
 
-const sink$ = combineLatest([left$, right$]).pipe(visualizedMVU(LANES.sink, dispatcher$, map(([l, r]) => l + r)));
+const combined$ = SHOW_GLITCH ? combineLatest([left$, right$]) : zip([left$, right$]);
+
+const sink$ = combined$.pipe(visualizedMVU(LANES.sink, dispatcher$, map(([l, r]) => l + r)));
 
 // Subscribing activates the streams; the first source value arrives STEP_MS later.
 sink$.subscribe((finalValue) => {

@@ -131,6 +131,8 @@ export interface RenderConfig {
   siblingOffset: number;
   /** Duration of one arrow step. Must match the cadence of REVEAL actions. */
   stepMs: number;
+  /** Drawn width of the timeline in px; lane lines and time bands span it. */
+  laneWidth: number;
 }
 
 export const DEFAULT_RENDER_CONFIG: RenderConfig = {
@@ -141,7 +143,23 @@ export const DEFAULT_RENDER_CONFIG: RenderConfig = {
   nodeSize: 32,
   siblingOffset: 40,
   stepMs: 400,
+  laneWidth: 3000,
 };
+
+/** Width of one time band in px: one `stepMs` of timeline. */
+export const pxPerStep = (config: RenderConfig): number => config.stepMs * config.timeScale;
+
+/**
+ * X coordinate of an event at `time` ms.
+ *
+ * The visualizer uses the web page's coordinate system: origin at the top
+ * left, X grows to the right, Y grows downward. Time 0 is the left edge of
+ * the timeline (`startXOffset`), band k covers [k * step, (k + 1) * step), and
+ * an element's top-left corner is placed at its coordinates, exactly like a
+ * DOM element. An event firing on a step tick therefore starts at the left
+ * edge of the band labeled with that tick.
+ */
+export const timeX = (time: number, config: RenderConfig): number => config.startXOffset + time * config.timeScale;
 
 const ARROW_SIZE = 24;
 const ARROW_SVG =
@@ -163,6 +181,31 @@ function ensureContainer(state: VisualizerState, config: RenderConfig): HTMLDivE
   root.className = 'rx-visualizer';
   root.style.setProperty('--rx-step', `${config.stepMs}ms`);
 
+  // Time bands: one shaded column per step, alternating light/dark, spanning
+  // from just above the first lane to just below the last. Band k starts at
+  // k steps from the timeline's left edge and is labeled with that start
+  // time. Drawn first so lane lines, nodes and arrows paint on top.
+  const bandWidth = pxPerStep(config);
+  const bandTop = laneY(0, config) - config.nodeSize / 2;
+  // Leave a full node of space under the last lane so the label clears the nodes.
+  const bandBottom = laneY(state.lanes.length - 1, config) + config.nodeSize * 2;
+  const bandCount = Math.ceil(config.laneWidth / bandWidth);
+  for (let k = 0; k < bandCount; k++) {
+    const band = document.createElement('div');
+    band.className = `rx-band ${k % 2 === 0 ? 'is-even' : 'is-odd'}`;
+    band.style.left = `${config.startXOffset + k * bandWidth}px`;
+    band.style.width = `${bandWidth}px`;
+    band.style.top = `${bandTop}px`;
+    band.style.height = `${bandBottom - bandTop}px`;
+
+    const label = document.createElement('span');
+    label.className = 'rx-band-label';
+    label.textContent = `${k * config.stepMs} ms`;
+    band.appendChild(label);
+
+    root.appendChild(band);
+  }
+
   state.lanes.forEach((laneName, laneIndex) => {
     const yPos = laneY(laneIndex, config);
 
@@ -175,7 +218,7 @@ function ensureContainer(state: VisualizerState, config: RenderConfig): HTMLDivE
     line.className = 'rx-lane-line';
     line.style.left = `${config.startXOffset}px`;
     line.style.top = `${yPos + config.nodeSize / 2 - 1}px`;
-    line.style.width = '3000px';
+    line.style.width = `${config.laneWidth}px`;
 
     root.append(title, line);
   });
@@ -225,7 +268,9 @@ function upsertArrow(
 }
 
 function renderColumn(root: HTMLElement, state: VisualizerState, column: Column, config: RenderConfig): void {
-  const x = config.startXOffset + column.time * config.timeScale;
+  // `x` is the column's left edge in page coordinates; every node in the
+  // column has its top-left corner at (x, top of its lane).
+  const x = timeX(column.time, config);
   const sourceLabel = String(column.sourceValue);
 
   // A. The source value itself is settled the moment it appears.
@@ -255,7 +300,7 @@ function renderColumn(root: HTMLElement, state: VisualizerState, column: Column,
   });
 
   // D. The arrow heads for the lane of the next emission to reveal and fades
-  //    out once the column is fully revealed.
+  //    out once the column is fully revealed. It is centered over the node.
   const next = column.emissions[column.revealed];
   const targetLane = next ? next.laneIndex : column.emissions.at(-1)?.laneIndex;
   const done = column.emissions.length > 0 && column.revealed >= column.emissions.length;
