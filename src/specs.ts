@@ -1,4 +1,4 @@
-import { auditTime, debounceTime, map, mergeMap, type Observable } from 'rxjs';
+import { auditTime, debounceTime, map, mergeMap, switchMap, type Observable } from 'rxjs';
 import type { MarbleSpec } from './spec-visualizer.ts';
 
 /**
@@ -107,6 +107,43 @@ export const specs = {
     },
     project: (value: unknown, x: Observable<unknown>) => x.pipe(map((i) => Number(i) * Number(value))),
     flatten: (project) => mergeMap(project),
+  },
+
+  /**
+   *   it('should map-and-flatten each item to an Observable', () => {
+   *     testScheduler.run(({ hot, cold, expectObservable, expectSubscriptions }) => {
+   *       const e1 = hot('   --1-----3--5-------|');
+   *       const e1subs = '   ^------------------!';
+   *       const e2 = cold('    x-x-x|            ', { x: 10 });
+   *       //                         x-x-x|
+   *       //                            x-x-x|
+   *       const expected = ' --x-x-x-y-yz-z-z---|';
+   *       const values = { x: 10, y: 30, z: 50 };
+   *
+   *       const result = e1.pipe(switchMap((x) => e2.pipe(map((i) => i * +x))));
+   *
+   *       expectObservable(result).toBe(expected, values);
+   *       expectSubscriptions(e1.subscriptions).toBe(e1subs);
+   *     });
+   *   });
+   *
+   * The second inner (for 3) is unsubscribed at frame 11, when 5 arrives,
+   * before its own completion: its lane ends with `!` and no complete bar.
+   */
+  switchMap: {
+    kind: 'higherOrder',
+    title: 'switchMap: should map-and-flatten each item to an Observable',
+    source: '   --1-----3--5-------|',
+    subscriptions: '   ^------------------!',
+    expected: ' --x-x-x-y-yz-z-z---|',
+    expectedValues: { x: 10, y: 30, z: 50 },
+    operatorLabel: 'switchMap(x => e2.pipe(map(i => i * +x)))',
+    inner: {
+      marbles: '    x-x-x|            ',
+      values: { x: 10 },
+    },
+    project: (value: unknown, e2: Observable<unknown>) => e2.pipe(map((i) => Number(i) * Number(value))),
+    flatten: (project) => switchMap(project),
   },
 } satisfies Record<string, MarbleSpec>;
 
