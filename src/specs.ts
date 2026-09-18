@@ -1,4 +1,4 @@
-import { auditTime, debounceTime } from 'rxjs';
+import { auditTime, debounceTime, map, mergeMap, type Observable } from 'rxjs';
 import type { MarbleSpec } from './spec-visualizer.ts';
 
 /**
@@ -19,13 +19,14 @@ export const specs = {
    *   });
    */
   debounceTime: {
+    kind: 'time',
     title: 'debounceTime: should debounce values by 2 time units',
     source: '  -a--bc--d---|',
     subscriptions: '  ^-----------!',
     duration: '  --|',
     expected: '---a---c--d-|',
     operatorLabel: 'debounceTime(t)',
-    operator: (t) => debounceTime(t),
+    operator: (t: number) => debounceTime(t),
     windows: 'debounce',
   },
 
@@ -48,14 +49,64 @@ export const specs = {
    * the pending value first and then completes, hence the `(x|)` group.
    */
   auditTime: {
+    kind: 'time',
     title: 'auditTime: should emit the last value in each time window',
     source: '  -a-x-y----b---x-cx---|',
     subscriptions: '  ^--------------------!',
     duration: '   -----|               ',
     expected: '------y--------x-----(x|)',
     operatorLabel: 'auditTime(t)',
-    operator: (t) => auditTime(t),
+    operator: (t: number) => auditTime(t),
     windows: 'audit',
+  },
+
+  /**
+   *   it('should map-and-flatten each item to an Observable', () => {
+   *     testScheduler.run(({ cold, hot, expectObservable, expectSubscriptions }) => {
+   *       const values = { x: 10, y: 30, z: 50 };
+   *       const x = cold('    x-x-x|             ', values);
+   *       //                        y-y-y|
+   *       //                           z-z-z|
+   *       const xsubs = [
+   *         '               --^----!             ',
+   *         '               --------^----!       ',
+   *         '               -----------^----!    ',
+   *       ];
+   *       const e1 = hot('  --1-----3--5--------|');
+   *       const e1subs = '  ^-------------------!';
+   *       const expected = '--x-x-x-y-yzyz-z----|';
+   *
+   *       const result = e1.pipe(mergeMap((value) => x.pipe(map((i) => i * +value))));
+   *
+   *       expectObservable(result).toBe(expected, values);
+   *       expectSubscriptions(x.subscriptions).toBe(xsubs);
+   *       expectSubscriptions(e1.subscriptions).toBe(e1subs);
+   *     });
+   *   });
+   *
+   * The project function is split from the flattening operator so the
+   * visualizer can tap each projected inner. `Number(i) * Number(value)` is
+   * the typed spelling of the spec's `i * +value`.
+   */
+  mergeMap: {
+    kind: 'higherOrder',
+    title: 'mergeMap: should map-and-flatten each item to an Observable',
+    source: '  --1-----3--5--------|',
+    subscriptions: '  ^-------------------!',
+    expected: '--x-x-x-y-yzyz-z----|',
+    expectedValues: { x: 10, y: 30, z: 50 },
+    operatorLabel: 'mergeMap(value => x.pipe(map(i => i * +value)))',
+    inner: {
+      marbles: '    x-x-x|             ',
+      values: { x: 10, y: 30, z: 50 },
+      subscriptions: [
+        '               --^----!             ',
+        '               --------^----!       ',
+        '               -----------^----!    ',
+      ],
+    },
+    project: (value: unknown, x: Observable<unknown>) => x.pipe(map((i) => Number(i) * Number(value))),
+    flatten: (project) => mergeMap(project),
   },
 } satisfies Record<string, MarbleSpec>;
 

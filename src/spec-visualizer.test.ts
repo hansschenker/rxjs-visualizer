@@ -82,6 +82,50 @@ describe('runMarbleSpec: auditTime (through the real TestScheduler)', () => {
   });
 });
 
+describe('runMarbleSpec: mergeMap with inner lanes (through the real TestScheduler)', () => {
+  const state = runMarbleSpec(specs.mergeMap);
+  const [source, operator, inner1, inner2, inner3, output] = state.lanes;
+
+  it('lays out source, operator header, one row per inner subscription, and output', () => {
+    expect(state.frames).toBe(21);
+    expect(state.lanes).toHaveLength(6);
+    expect(operator.noBaseline).toBe(true);
+    expect(source.events).toEqual([next(2, '1'), next(8, '3'), next(11, '5'), complete(20)]);
+  });
+
+  it('takes each inner lifetime from the cold subscription log and its values from the projected inner', () => {
+    expect(inner1.spans).toEqual([{ from: 2, to: 7, kind: 'subscription' }]);
+    expect(inner1.events).toEqual([next(2, '10'), next(4, '10'), next(6, '10'), complete(7)]);
+    expect(inner1.detail).toBe('for 1');
+    expect(inner1.marblesFrom).toBe(2);
+    expect(inner1.dropFrom).toEqual({ lane: 0, frame: 2 });
+
+    expect(inner2.spans).toEqual([{ from: 8, to: 13, kind: 'subscription' }]);
+    expect(inner2.events).toEqual([next(8, '30'), next(10, '30'), next(12, '30'), complete(13)]);
+
+    expect(inner3.spans).toEqual([{ from: 11, to: 16, kind: 'subscription' }]);
+    expect(inner3.events).toEqual([next(11, '50'), next(13, '50'), next(15, '50'), complete(16)]);
+  });
+
+  it('resolves the expected values map and matches the merged output', () => {
+    const wanted = [
+      next(2, '10'),
+      next(4, '10'),
+      next(6, '10'),
+      next(8, '30'),
+      next(10, '30'),
+      next(11, '50'),
+      next(12, '30'),
+      next(13, '50'),
+      next(15, '50'),
+      complete(20),
+    ];
+    expect(output.events).toEqual(wanted);
+    expect(output.expected).toEqual(wanted);
+    expect(output.detail).toBe("'--x-x-x-y-yzyz-z----|' · x=10 y=30 z=50");
+  });
+});
+
 describe('updateSpec', () => {
   const base: SpecState = { title: 't', lanes: [], frames: 3, playhead: -1 };
 
