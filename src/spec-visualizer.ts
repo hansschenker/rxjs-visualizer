@@ -24,6 +24,8 @@ export interface Span {
   from: number;
   to: number;
   kind: SpanKind;
+  /** Frames of further values folded into this window after the one that opened it. */
+  inputs?: number[];
 }
 
 export interface SpecLane {
@@ -83,7 +85,11 @@ export interface MarbleSpec {
   expected: string;
   operatorLabel: string;
   operator: (t: number) => OperatorFunction<string, string>;
+  /** Which annotator draws the operator lane's windows. */
+  windows: WindowKind;
 }
+
+export type WindowKind = 'debounce' | 'audit';
 
 // Structural views of what TestScheduler hands to its assert callback.
 interface RecordedMessage {
@@ -114,10 +120,14 @@ const toEvents = (messages: RecordedMessage[]): MarbleEvent[] =>
 /** Frames a run-mode marble string covers: one per character, whitespace ignored. */
 export const marbleFrames = (marbles: string): number => marbles.replace(/\s/g, '').length;
 
+// Within one frame the TestScheduler delivers hot-observable messages before
+// operator timers scheduled during the run, so a value that lands on the exact
+// frame a window ends is seen by the operator *before* the window fires.
+
 /**
- * Windows of a debounceTime-style operator: each value opens a window of `t`
- * frames. A newer value inside the window cancels it; source completion closes
- * it early (debounceTime flushes the pending value on complete).
+ * Windows of debounceTime: each value opens a window of `t` frames. A newer
+ * value on or before the window's last frame cancels it; source completion
+ * closes it early (debounceTime flushes the pending value on complete).
  */
 export const debounceWindows = (events: MarbleEvent[], t: number): Span[] => {
   const nexts = events.filter((e) => e.kind === 'next');
@@ -125,12 +135,35 @@ export const debounceWindows = (events: MarbleEvent[], t: number): Span[] => {
   return nexts.map((ev, i): Span => {
     const end = completeAt === undefined ? ev.frame + t : Math.min(ev.frame + t, completeAt);
     const following = nexts[i + 1];
-    if (following !== undefined && following.frame < end) {
+    if (following !== undefined && following.frame <= end) {
       return { from: ev.frame, to: following.frame, kind: 'cancelled' };
     }
     return { from: ev.frame, to: end, kind: 'window' };
   });
 };
+
+/**
+ * Windows of auditTime: a value opens a window of `t` frames if none is open;
+ * values arriving while it is open (its last frame included) are folded in as
+ * `inputs`, and the window emits the latest of them when it ends. Windows are
+ * never cut short, not even by source completion.
+ */
+export const auditWindows = (events: MarbleEvent[], t: number): Span[] => {
+  const spans: Span[] = [];
+  for (const ev of events) {
+    if (ev.kind !== 'next') continue;
+    const open = spans[spans.length - 1];
+    if (open !== undefined && ev.frame <= open.to) {
+      open.inputs = [...(open.inputs ?? []), ev.frame];
+    } else {
+      spans.push({ from: ev.frame, to: ev.frame + t, kind: 'window', inputs: [] });
+    }
+  }
+  return spans;
+};
+
+const windowsFor = (kind: WindowKind): ((events: MarbleEvent[], t: number) => Span[]) =>
+  kind === 'audit' ? auditWindows : debounceWindows;
 
 /**
  * Runs the spec verbatim inside `TestScheduler.run()` with a capturing assert
@@ -187,7 +220,7 @@ export function runMarbleSpec(spec: MarbleSpec): SpecState {
         marbles: '',
         events: [],
         expected: [],
-        spans: debounceWindows(source, t),
+        spans: windowsFor(spec.windows)(source, t),
         reveal: 'playhead',
       },
       {
@@ -378,10 +411,17 @@ function renderSpan(root: HTMLElement, id: string, span: Span, lane: number, sta
   const visibleTo = Math.min(span.to, Math.max(span.from, state.playhead));
 
   if (lane > 0) {
+    // Drop lines from the lane above: the value that opened the window, then
+    // every value folded into it while it was open.
     const dropTop = baselineY(lane - 1, config) + config.nodeSize / 2;
     const drop = upsert(root, `${id}-drop`, 'rx-drop');
     place(drop, { left: x0, top: dropTop, height: base - dropTop });
     drop.hidden = !started;
+    (span.inputs ?? []).forEach((frame, j) => {
+      const input = upsert(root, `${id}-in${j}`, 'rx-drop');
+      place(input, { left: frameCenter(frame, config), top: dropTop, height: base - dropTop });
+      input.hidden = frame > state.playhead;
+    });
   }
 
   const bar = upsert(root, `${id}-bar`, `rx-window${span.kind === 'cancelled' ? ' is-cancelled' : ''}`);
@@ -419,9 +459,10 @@ function renderPlayhead(root: HTMLElement, state: SpecState, config: SpecRenderC
 
   place(upsert(root, 'rx-spec-future', 'rx-future'), { left: x, top: bodyTop, width: Math.max(0, right - x), height: bodyBottom - bodyTop });
   place(upsert(root, 'rx-spec-playhead', 'rx-playhead'), { left: x - 1, top: bodyTop - 8, height: bodyBottom - bodyTop + 8 });
+  // The label names what the playhead is: the TestScheduler's virtual clock.
   const label = upsert(root, 'rx-spec-playhead-label', 'rx-playhead-label');
-  label.textContent = state.playhead < 0 ? 'start' : `frame ${state.playhead}`;
-  place(label, { left: x - 34, top: bodyBottom + 6 });
+  label.textContent = state.playhead < 0 ? 'Scheduler · start' : `Scheduler · frame ${state.playhead}`;
+  place(label, { left: x, top: bodyBottom + 6 });
 }
 
 export function renderSpecToDOM(state: SpecState, config: SpecRenderConfig = DEFAULT_SPEC_RENDER_CONFIG): void {
