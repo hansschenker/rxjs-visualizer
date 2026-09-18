@@ -2,7 +2,11 @@ import './style.css';
 import {
   Subject,
   combineLatest,
+  concat,
+  concatMap,
   filter,
+  from,
+  ignoreElements,
   interval,
   map,
   mergeMap,
@@ -19,6 +23,7 @@ import {
 import {
   DEFAULT_RENDER_CONFIG,
   hasPendingReveals,
+  isColumnDone,
   isSourceEmit,
   renderVisualizerToDOM,
   trackSource,
@@ -34,8 +39,9 @@ import {
 
 /** One source value, one arrow step, and one reveal all take this long. */
 const STEP_MS = 800;
-const SOURCE_VALUES = 2;
-/** Horizontal distance between two source values, whatever the speed. */
+/** Emitted in order; each one waits for the previous one to reach the sink. */
+const SOURCE_VALUES = [1, 2];
+/** Horizontal distance of one step, whatever the speed. */
 const PX_PER_STEP = 200;
 /**
  * false: the sink uses `zip`, which pairs each source value's left and right
@@ -47,7 +53,7 @@ const PX_PER_STEP = 200;
 const SHOW_GLITCH = false;
 
 const LANES = {
-  source: `1. Source (every ${STEP_MS}ms)`,
+  source: '1. Source',
   left: '2. Left (x * 2)',
   right: '3. Right (x * 10)',
   sink: '4. Sink (L + R)',
@@ -84,11 +90,25 @@ dispatcher$
   )
   .subscribe((action) => dispatcher$.next(action));
 
-// 4. Pipeline. `share()` keeps one timer and one source-lane emission per value
-//    even though both branches subscribe to the source.
-const source$ = timer(STEP_MS, STEP_MS).pipe(
-  take(SOURCE_VALUES),
-  map((i) => i + 1),
+// 4. Pipeline. The source is paced by the visualizer itself: each value is
+//    emitted one step after the previous value's column is fully revealed,
+//    i.e. after it has arrived at the sink lane. `share()` keeps one source
+//    subscription and one source-lane emission per value even though both
+//    branches subscribe to it.
+const columnDone$ = (column: number) =>
+  state$.pipe(
+    filter((state) => isColumnDone(state, column)),
+    take(1),
+    ignoreElements(),
+  );
+
+const source$ = from(SOURCE_VALUES).pipe(
+  concatMap((value, column) =>
+    concat(
+      timer(STEP_MS).pipe(map(() => value)),
+      columnDone$(column),
+    ),
+  ),
 );
 
 const trackedSource$ = source$.pipe(trackSource(LANES.source, dispatcher$), share());

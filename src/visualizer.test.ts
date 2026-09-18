@@ -3,6 +3,7 @@ import { Subject, map, of } from 'rxjs';
 import {
   DEFAULT_RENDER_CONFIG,
   hasPendingReveals,
+  isColumnDone,
   pxPerStep,
   timeX,
   trackSource,
@@ -78,6 +79,24 @@ describe('hasPendingReveals', () => {
     expect(hasPendingReveals(base, 0)).toBe(true);
     expect(hasPendingReveals(update(base, reveal(0)), 0)).toBe(false);
     expect(hasPendingReveals(base, 1)).toBe(false);
+  });
+});
+
+describe('isColumnDone', () => {
+  it('is false until every recorded emission has been revealed', () => {
+    const opened = run([sourceEmit(0, 1, 1400)]);
+    expect(isColumnDone(opened, 0)).toBe(false);
+
+    const recorded = run([emit('left', 2), emit('sink', 12)], opened);
+    expect(isColumnDone(recorded, 0)).toBe(false);
+    expect(isColumnDone(update(recorded, reveal(0)), 0)).toBe(false);
+    expect(isColumnDone(run([reveal(0), reveal(0)], recorded), 0)).toBe(true);
+  });
+
+  it('is false for a column that produced no downstream emission, and for unknown columns', () => {
+    const state = run([sourceEmit(0, 1, 1400), reveal(0)]);
+    expect(isColumnDone(state, 0)).toBe(false);
+    expect(isColumnDone(state, 3)).toBe(false);
   });
 });
 

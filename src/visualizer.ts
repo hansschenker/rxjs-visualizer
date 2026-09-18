@@ -89,6 +89,16 @@ export const hasPendingReveals = (state: VisualizerState, columnIndex: number): 
   return column !== undefined && column.revealed < column.emissions.length;
 };
 
+/**
+ * True once `columnIndex` has recorded at least one dependent emission and the
+ * arrow has reached all of them. A column whose source value produced no
+ * downstream emission never becomes done.
+ */
+export const isColumnDone = (state: VisualizerState, columnIndex: number): boolean => {
+  const column = state.columns.find((c) => c.index === columnIndex);
+  return column !== undefined && column.emissions.length > 0 && column.revealed >= column.emissions.length;
+};
+
 // ==========================================
 // 3. TRACKING OPERATORS
 // ==========================================
