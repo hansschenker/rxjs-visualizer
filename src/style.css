@@ -1,0 +1,92 @@
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: #1e1e1e;
+  color: #ffffff;
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.rx-visualizer {
+  --rx-step: 400ms;
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  overflow-x: auto;
+}
+
+.rx-lane-title {
+  position: absolute;
+  left: 20px;
+  font-weight: bold;
+}
+
+.rx-lane-line {
+  position: absolute;
+  height: 2px;
+  background: #444444;
+}
+
+/* One emitted value. Position (left/top) is set inline by the renderer. */
+.rx-node {
+  position: absolute;
+  box-sizing: border-box;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  z-index: 10;
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease,
+    color 200ms ease;
+}
+
+/* Carries the untransformed source value until the arrow arrives. */
+.rx-node.is-pending {
+  background: transparent;
+  border: 2px dashed #777777;
+  color: #999999;
+}
+
+/* Shows the value the operator actually produced. */
+.rx-node.is-settled {
+  background: #e53935;
+  border: 2px solid #e53935;
+  color: #ffffff;
+  animation: rx-pop 300ms ease-out;
+}
+
+/* Travels from the source value to each dependent value, one lane per step. */
+.rx-arrow {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  color: #ffca28;
+  z-index: 20;
+  filter: drop-shadow(0 0 4px rgba(255, 202, 40, 0.6));
+  transition:
+    top var(--rx-step) ease-in-out,
+    opacity 300ms ease;
+}
+
+.rx-arrow.is-done {
+  opacity: 0;
+}
+
+@keyframes rx-pop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.35);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
