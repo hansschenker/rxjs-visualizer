@@ -172,7 +172,8 @@ export const pxPerStep = (config: RenderConfig): number => config.stepMs * confi
 export const timeX = (time: number, config: RenderConfig): number => config.startXOffset + time * config.timeScale;
 
 const ARROW_SIZE = 24;
-const ARROW_SVG =
+/** Downward arrow glyph shared by the renderers; sized by the element's CSS. */
+export const ARROW_SVG =
   '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">' +
   '<path d="M12 2v17M5 12l7 7 7-7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>' +
   '</svg>';
@@ -180,9 +181,45 @@ const ARROW_SVG =
 // Created once; lanes are drawn from the state seen on the first render.
 let container: HTMLDivElement | null = null;
 
-const laneY = (laneIndex: number, config: RenderConfig): number => config.startYOffset + laneIndex * config.laneHeight;
+/** Top edge of lane `laneIndex` in page coordinates. */
+export const laneY = (laneIndex: number, config: RenderConfig): number =>
+  config.startYOffset + laneIndex * config.laneHeight;
 
 const nodeId = (column: number, lane: number, sibling: number): string => `rx-node-c${column}-l${lane}-n${sibling}`;
+
+export interface TimeBandOptions {
+  top: number;
+  height: number;
+  /** Text for band k's label at its left edge; omit for unlabeled bands. */
+  label?: (step: number) => string;
+}
+
+/**
+ * Draws one shaded band per step across `config.laneWidth`, alternating
+ * `.is-even` / `.is-odd`. Band k starts at k steps from the timeline's left
+ * edge. Static: call once at setup, before anything that must paint on top.
+ */
+export function drawTimeBands(root: HTMLElement, config: RenderConfig, options: TimeBandOptions): void {
+  const bandWidth = pxPerStep(config);
+  const bandCount = Math.ceil(config.laneWidth / bandWidth);
+  for (let k = 0; k < bandCount; k++) {
+    const band = document.createElement('div');
+    band.className = `rx-band ${k % 2 === 0 ? 'is-even' : 'is-odd'}`;
+    band.style.left = `${config.startXOffset + k * bandWidth}px`;
+    band.style.width = `${bandWidth}px`;
+    band.style.top = `${options.top}px`;
+    band.style.height = `${options.height}px`;
+
+    if (options.label) {
+      const label = document.createElement('span');
+      label.className = 'rx-band-label';
+      label.textContent = options.label(k);
+      band.appendChild(label);
+    }
+
+    root.appendChild(band);
+  }
+}
 
 function ensureContainer(state: VisualizerState, config: RenderConfig): HTMLDivElement {
   if (container) return container;
@@ -191,30 +228,16 @@ function ensureContainer(state: VisualizerState, config: RenderConfig): HTMLDivE
   root.className = 'rx-visualizer';
   root.style.setProperty('--rx-step', `${config.stepMs}ms`);
 
-  // Time bands: one shaded column per step, alternating light/dark, spanning
-  // from just above the first lane to just below the last. Band k starts at
-  // k steps from the timeline's left edge and is labeled with that start
-  // time. Drawn first so lane lines, nodes and arrows paint on top.
-  const bandWidth = pxPerStep(config);
+  // Time bands from just above the first lane to just below the last, labeled
+  // with each band's start time. Drawn first so lanes, nodes and arrows paint
+  // on top. A full node of space under the last lane keeps labels clear of nodes.
   const bandTop = laneY(0, config) - config.nodeSize / 2;
-  // Leave a full node of space under the last lane so the label clears the nodes.
   const bandBottom = laneY(state.lanes.length - 1, config) + config.nodeSize * 2;
-  const bandCount = Math.ceil(config.laneWidth / bandWidth);
-  for (let k = 0; k < bandCount; k++) {
-    const band = document.createElement('div');
-    band.className = `rx-band ${k % 2 === 0 ? 'is-even' : 'is-odd'}`;
-    band.style.left = `${config.startXOffset + k * bandWidth}px`;
-    band.style.width = `${bandWidth}px`;
-    band.style.top = `${bandTop}px`;
-    band.style.height = `${bandBottom - bandTop}px`;
-
-    const label = document.createElement('span');
-    label.className = 'rx-band-label';
-    label.textContent = `${k * config.stepMs} ms`;
-    band.appendChild(label);
-
-    root.appendChild(band);
-  }
+  drawTimeBands(root, config, {
+    top: bandTop,
+    height: bandBottom - bandTop,
+    label: (k) => `${k * config.stepMs} ms`,
+  });
 
   state.lanes.forEach((laneName, laneIndex) => {
     const yPos = laneY(laneIndex, config);

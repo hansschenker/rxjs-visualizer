@@ -6,12 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 An RxJS operator visualizer: pure TypeScript + Vite, no UI framework. It animates emissions flowing through an RxJS pipeline as dots on horizontal "lanes" (one per operator), with X = time of the source emission and Y = lane.
 
-Two pages share one visualizer. `index.html` is the main demo: a diamond pipeline (source, two `map` branches, a `zip` sink) where every column is a clean top-to-bottom flow. `glitch.html` runs the same pipeline with a `combineLatest` sink to expose the diamond-dependency glitch (an intermediate sink value). The glitch page is postponed work in progress: keep glitch-specific features there, never on the main page.
+Three pages share one coordinate system. `index.html` is the main demo: a diamond pipeline (source, two `map` branches, a `zip` sink) where every column is a clean top-to-bottom flow, in real time. `glitch.html` runs the same pipeline with a `combineLatest` sink to expose the diamond-dependency glitch (an intermediate sink value); it is postponed work in progress, so keep glitch-specific features there, never on the main page. `spec.html` renders an rxjs marble test (currently debounceTime) by running it through the real `TestScheduler` in the browser: one frame is one column, expected values are rings, actual values are fills, and a playhead walks virtual time. The design note behind the spec page is `docs/spec-proposal.html` (standalone HTML, also served by the dev server at `/docs/spec-proposal.html`).
 
 ## Commands
 
 ```bash
-npm run dev       # Vite dev server: http://localhost:5173/ and http://localhost:5173/glitch.html
+npm run dev       # Vite dev server: http://localhost:5173/ , /glitch.html , /spec.html
 npm run build     # tsc (typecheck only, noEmit) && vite build -> dist/
 npm run preview   # serve dist/
 npm test          # vitest run (all tests, once)
@@ -19,13 +19,13 @@ npx tsc           # typecheck alone; this is the gate that fails builds
 npx vitest run src/visualizer.test.ts   # one file; drop `run` for watch mode
 ```
 
-Tests are Vitest 5 with no config file: default node environment, default `*.test.ts` discovery. The reducer and tracking operators in `src/visualizer.ts` are pure and covered; the DOM renderer is not.
+Tests are Vitest 5 with no config file: default node environment, default `*.test.ts` discovery. The reducers, tracking operators, and the spec runner (which drives the real `TestScheduler`) are pure and covered; the DOM renderers are not.
 
 `vitepress` is listed in `dependencies` but there is no `.vitepress/` directory or docs site. Treat it as an unused leftover, not as a signal that a docs site exists.
 
 ## Architecture
 
-`src/visualizer.ts` is the pure, testable module (model, reducer, tracking operators, DOM renderer). `src/demo.ts` exports `startDiamondDemo(options)`, which wires the store, the reveal effect, and the diamond pipeline; the options carry the sink strategy (`'zip'` or `'combineLatest'`) and the tuning values `stepMs`, `values`, `pxPerStep`. `src/main.ts` and `src/glitch.ts` are one-line page entries. `vite.config.ts` lists both HTML pages as build inputs (`build.rolldownOptions.input`); a new page needs an entry there or `vite build` will not emit it. Appearance lives in `src/style.css` as `.rx-*` classes; the renderer sets only positions inline.
+`src/visualizer.ts` is the pure, testable module for the real-time pages (model, reducer, tracking operators, DOM renderer) and also exports the shared coordinate helpers `timeX`, `laneY`, `pxPerStep`, `drawTimeBands` and `ARROW_SVG`. `src/demo.ts` exports `startDiamondDemo(options)`, which wires the store, the reveal effect, and the diamond pipeline; the options carry the sink strategy (`'zip'` or `'combineLatest'`) and the tuning values `stepMs`, `values`, `pxPerStep`. `src/spec-visualizer.ts` is the frame-based counterpart for marble specs (model, reducer, `runMarbleSpec`, `debounceWindows`, renderer); `src/spec-demo.ts` wires its playback; `src/specs.ts` holds the spec data. `src/main.ts`, `src/glitch.ts` and `src/spec.ts` are one-line page entries. `vite.config.ts` lists every HTML page as a build input (`build.rolldownOptions.input`); a new page needs an entry there or `vite build` will not emit it. Appearance lives in `src/style.css` as `.rx-*` classes; the renderers set only positions inline.
 
 The app is an Elm-style Model-View-Update loop driven by RxJS itself:
 
@@ -36,6 +36,13 @@ The app is an Elm-style Model-View-Update loop driven by RxJS itself:
 5. **Reveal effect** — for every `SOURCE_EMIT`, `demo.ts` starts `interval(stepMs)` that dispatches `REVEAL` for that column and stops itself via `takeWhile(hasPendingReveals)`.
 6. **Source pacing** — the demo source is `from(SOURCE_VALUES)` with `concatMap`: each value waits one step, is emitted, then the inner observable holds (via `state$` + `isColumnDone`) until that value's column is fully revealed, i.e. until the arrow has reached the sink. Only then does the next value start its step. Result: one event per step, and columns never overlap. A source value that produces no downstream emission would stall the source forever.
 7. **View** — `renderVisualizerToDOM` upserts absolutely positioned elements keyed by id, so re-rendering the whole state every action is cheap. Per column: the source node appears settled at once; every other lane gets a dashed **pending** node showing the untransformed source value; each `REVEAL` turns the next emission's node red with its real value (and a lane that emits twice in one column gets a second node shifted right by `siblingOffset`); a yellow **arrow** element moves to the lane of the next emission to reveal, with a CSS transition of `--rx-step` so it arrives exactly when the value flips, and fades once the column is done.
+
+### Spec page (`spec.html`)
+
+Same coordinate rule, different unit: `stepMs: 1` (one TestScheduler frame) and `timeScale: 30` (px per frame), marble 26 px so adjacent frames never overlap. `runMarbleSpec(spec)` constructs `new TestScheduler(capture)` and runs the spec verbatim inside `run()`: `hot()` supplies the source events, the capture callback receives the actual and expected messages from `expectObservable(...).toBe(...)` and the subscription log from `expectSubscriptions`. State is lanes of `{ frame, kind, value }` events plus spans (subscription, window, cancelled window) and a `playhead`; the only action is `TICK`. Lanes marked `reveal: 'playhead'` show their events when the playhead reaches them; the rest are inputs shown up front. `debounceWindows` is the first operator annotator; time-based operators share its shape (a duration that starts at an input frame).
+
+- **Parse and run inside `run()`.** Outside it the static `TestScheduler.parseMarbles` uses a frame factor of 10 and reports frames 10, 40, 50 instead of 1, 4, 5.
+- The `10ms` / `1s` time-progression syntax is not handled yet; at 30 px per ms it needs an axis-break convention first.
 
 Consequences worth knowing before changing it:
 

@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- Design note: how an rxjs TestScheduler marble spec maps onto the visualizer grid. Standalone; open directly or via the dev server at /docs/spec-proposal.html -->
+<title>Marble Spec Mapping</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* Single-theme on purpose: this shows the app's own dark screen. */
+  :root {
+    --page: #171716;
+    --screen: #1e1e1e;
+    --ink: #e8e6e2;
+    --muted: #918d86;
+    --faint: #5a5751;
+    --line: #363532;
+    --grid: #3f3d39;
+    --band-even: rgba(255, 255, 255, 0.05);
+    --band-odd: rgba(255, 255, 255, 0.12);
+    --node: #e53935;
+    --pending: #7a7772;
+    --accent: #ffca28;
+    --accent-ink: #2a2000;
+    --sans: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, Consolas, monospace;
+    color-scheme: dark;
+  }
+
+  body { margin: 0; background: var(--page); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.55; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 44px 28px 80px; display: grid; gap: 44px; }
+  p { margin: 0; }
+  h1 { margin: 0; font-size: 32px; line-height: 1.15; font-weight: 600; letter-spacing: -0.01em; text-wrap: balance; }
+  h2 { margin: 0; font-size: 20px; font-weight: 600; text-wrap: balance; }
+  .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .intro { max-width: 70ch; display: grid; gap: 14px; }
+  code, pre { font-family: var(--mono); }
+  code { font-size: 0.92em; color: var(--ink); }
+  pre { margin: 0; padding: 16px 18px; background: var(--screen); border: 1px solid var(--line); font-size: 13px; line-height: 1.5; color: var(--muted); overflow-x: auto; }
+  pre b { color: var(--ink); font-weight: 500; }
+  pre i { color: var(--accent); font-style: normal; }
+
+  .units { margin: 0; display: grid; grid-template-columns: max-content 1fr; column-gap: 18px; row-gap: 4px; font-family: var(--mono); font-size: 13px; color: var(--muted); }
+  .units dt { color: var(--faint); }
+  .units dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+  .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+  @media (max-width: 900px) { .two { grid-template-columns: 1fr; } }
+
+  section { display: grid; gap: 16px; }
+
+  /* ---- the mock screen ---- */
+  .frame { background: var(--screen); border: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; font-family: var(--mono); color: #fff; }
+  .mock { position: relative; user-select: none; }
+  .mock * { box-sizing: border-box; }
+  .abs { position: absolute; }
+  .band-even { background: var(--band-even); }
+  .band-odd  { background: var(--band-odd); }
+  .ruler-num { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .ruler-num.major { color: var(--ink); }
+  .tick { width: 1px; background: var(--grid); }
+  .lane-label { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+  .lane-sub { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .charstrip { font-size: 12px; color: var(--faint); text-align: center; }
+  .charstrip.hi { color: var(--muted); }
+  .baseline { height: 2px; background: #444; }
+  .rowline { height: 1px; background: var(--grid); }
+  .marble { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; z-index: 10; }
+  .marble.actual { background: var(--node); border: 2px solid var(--node); color: #fff; }
+  .marble.source { background: var(--node); border: 2px solid var(--node); color: #fff; }
+  .marble.expected { background: transparent; border: 2px solid var(--pending); color: #a09d97; }
+  .marble.future { opacity: 0.35; }
+  .complete { width: 3px; background: #fff; }
+  .complete.future { opacity: 0.35; }
+  .subbar { height: 3px; background: rgba(255, 202, 40, 0.45); }
+  .subglyph { font-size: 12px; color: var(--accent); }
+  .window { height: 5px; background: var(--accent); border-radius: 2px; }
+  .window.cancelled { background: transparent; border-top: 2px dashed var(--pending); height: 0; }
+  .window.future { opacity: 0.3; }
+  .cross { font-size: 14px; color: var(--pending); line-height: 1; }
+  .drop { width: 1px; border-left: 1px dotted var(--accent); opacity: 0.7; }
+  .drop.future { opacity: 0.25; }
+  .arrow { width: 18px; height: 18px; color: var(--accent); z-index: 20; }
+  .arrow.future { opacity: 0.3; }
+  .playhead { width: 2px; background: var(--accent); z-index: 30; box-shadow: 0 0 6px rgba(255, 202, 40, 0.6); }
+  .playhead-lbl { font-size: 11px; color: var(--accent-ink); background: var(--accent); padding: 1px 6px; border-radius: 2px; z-index: 31; white-space: nowrap; }
+  .dim { background: rgba(0, 0, 0, 0.38); z-index: 25; pointer-events: none; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; font-family: var(--mono); font-size: 12px; color: var(--muted); align-items: center; }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .sw { display: inline-block; width: 14px; height: 14px; border-radius: 50%; }
+
+  /* ---- mapping table ---- */
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; vertical-align: top; padding: 9px 12px 9px 0; border-bottom: 1px solid var(--line); }
+  th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+  td:first-child { font-family: var(--mono); white-space: nowrap; color: var(--ink); }
+  td { color: var(--muted); }
+  td b { color: var(--ink); font-weight: 500; }
+
+  ul { margin: 0; padding-left: 18px; color: var(--muted); display: grid; gap: 6px; }
+  ul b { color: var(--ink); font-weight: 500; }
+  .rec { color: var(--muted); border-top: 1px solid var(--line); padding-top: 18px; max-width: 70ch; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="intro">
+    <p class="eyebrow">rxjs-visualizer · design note</p>
+    <h1>One TestScheduler frame is one column</h1>
+    <p>
+      Inside <code>testScheduler.run()</code> a marble character is one virtual frame and one frame is one millisecond.
+      The visualizer already draws time as <code>x = startX + t · scale</code> with one shaded band per step, so a spec
+      maps onto it by choosing the unit: <b>step = 1 frame, scale = 30 px</b>. Rows stay what they are today, one per
+      marble line. Below is your debounceTime spec drawn that way, paused at frame 7.
+    </p>
+    <dl class="units">
+      <dt>1 frame</dt><dd>1 ms virtual time = 1 marble character = 30 px</dd>
+      <dt>marble</dt><dd>26 px, left edge at the frame's left edge (2 px inset)</dd>
+      <dt>1 row</dt><dd>one marble line of the spec = 110 px</dd>
+      <dt>playhead</dt><dd>advances one frame per 400 ms of wall time; 13 frames play in 5.2 s</dd>
+    </dl>
+  </header>
+
+  <section class="two">
+    <div style="display:grid;gap:12px">
+      <h2>The spec, as written in rxjs</h2>
+<pre>it('should debounce values by 2 time units', () => {
+  testScheduler.run(({ hot, time, expectObservable, expectSubscriptions }) => {
+    const e1 = hot('  <b>-a--bc--d---|</b>');
+    const e1subs = '  <b>^-----------!</b>';
+    const expected = '<b>---a---c--d-|</b>';
+    const t = time('  <b>--|</b>');                       <i>// 2 frames</i>
+
+    expectObservable(e1.pipe(debounceTime(t))).toBe(expected);
+    expectSubscriptions(e1.subscriptions).toBe(e1subs);
+  });
+});</pre>
+    </div>
+    <div style="display:grid;gap:12px">
+      <h2>What the scheduler actually recorded</h2>
+      <p style="color:var(--muted)">
+        Run through the real <code>TestScheduler</code> with a capturing assert callback instead of a test framework.
+        The operator did the work; nothing was reimplemented.
+      </p>
+<pre>time('--|')  → <b>2</b>
+e1 (hot)     → a@<b>1</b>  b@<b>4</b>  c@<b>5</b>  d@<b>8</b>  complete@<b>12</b>
+subscription → ^@<b>0</b> … !@<b>12</b>
+actual       → a@<b>3</b>  c@<b>7</b>  d@<b>10</b>  complete@<b>12</b>
+expected     → a@<b>3</b>  c@<b>7</b>  d@<b>10</b>  complete@<b>12</b>   <i>✓ match</i></pre>
+      <p style="color:var(--faint);font-size:13px">
+        Gotcha: the static <code>TestScheduler.parseMarbles()</code> reports frames ×10 (10, 40, 50 …) because the frame factor
+        outside <code>run()</code> is 10. Parse and run inside <code>run()</code>, where a frame is 1 ms.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>debounceTime(2) on the grid, paused at frame 7</h2>
+    <div class="frame"><div class="mock" id="mock"></div></div>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--node)"></i> source / actual value</span>
+      <span><i class="sw" style="border:2px solid var(--pending)"></i> expected value (ring)</span>
+      <span><i style="display:inline-block;width:22px;height:5px;background:var(--accent);border-radius:2px"></i> debounce window (t = 2 frames)</span>
+      <span><i style="display:inline-block;width:22px;border-top:2px dashed var(--pending)"></i> window cancelled by a newer value</span>
+      <span><i style="display:inline-block;width:3px;height:14px;background:#fff"></i> complete</span>
+      <span style="color:var(--accent)">▮ playhead · frames to its right are still in the future</span>
+    </div>
+    <p style="color:var(--muted);max-width:70ch">
+      Read it top to bottom in any frame: a value enters on the source lane, drops onto the operator lane and opens a window of
+      <code>t</code> frames, and when the window closes an arrow drops the value onto the output lane. <code>b</code>'s window is
+      cut at frame 5 because <code>c</code> arrived inside it, which is the whole idea of debounce, and it is visible as a dashed stub
+      ending in a cross. The output lane shows the expected marbles as rings and the actual ones as fills; a mismatch would be a ring
+      without a fill or a fill without a ring, drawn in red.
+    </p>
+  </section>
+
+  <section>
+    <h2>Mapping: spec element → picture</h2>
+    <table>
+      <thead><tr><th style="width:26%">In the spec</th><th>On the grid</th></tr></thead>
+      <tbody>
+        <tr><td>-</td><td>One frame: a 30 px band. Bands alternate per frame; every 5th frame's number is brighter on the ruler so long diagrams stay countable.</td></tr>
+        <tr><td>a  b  c</td><td>A 26 px marble with the value inside, left edge at the frame's left edge. Same red as today's settled node.</td></tr>
+        <tr><td>|</td><td>A vertical 3 px bar across the lane at that frame: complete.</td></tr>
+        <tr><td>#</td><td>A red cross at that frame: error.</td></tr>
+        <tr><td>^  !</td><td>A thin amber bar under the source lane from subscribe to unsubscribe, with the two glyphs at its ends. Expected vs actual subscriptions overlay the same way as values.</td></tr>
+        <tr><td>(ab)</td><td>Marbles stacked in one frame, each offset 6 px down-right; the group still advances the ruler by its character count, exactly as the scheduler does.</td></tr>
+        <tr><td>time('--|')</td><td>A duration of n frames. For time-based operators it becomes the window bar on the operator lane, starting at the frame of the value that opened it.</td></tr>
+        <tr><td>10ms  1s</td><td>Time-progression syntax would need 300 px per 10 ms and 30,000 px per second at this scale, so long gaps collapse into an axis break two frames wide, labeled with the skipped time. Not needed for this spec.</td></tr>
+        <tr><td>expectObservable(…).toBe(expected)</td><td>The output lane: <b>expected</b> from the marble string as rings, <b>actual</b> from the scheduler's recording as fills. They coincide when the test passes.</td></tr>
+        <tr><td>the playhead</td><td>Virtual time, played back at a wall-clock speed you choose (400 ms per frame here). Everything at a frame appears when the playhead reaches it; the frames ahead are dimmed.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="two">
+    <div style="display:grid;gap:12px">
+      <h2>How it plugs into the current code</h2>
+      <ul>
+        <li><b>Coordinates need no new rule.</b> Today's renderer takes <code>stepMs</code> and <code>timeScale</code>; a spec page passes <code>stepMs: 1</code> (one frame) and <code>timeScale: 30</code>. Bands, ruler and <code>timeX()</code> work unchanged. Only the marble size shrinks from 32 to 26 so two adjacent frames (<code>bc</code>) never overlap.</li>
+        <li><b>The scheduler supplies the data.</b> <code>new TestScheduler((actual, expected) => record(actual, expected))</code>, then run the spec verbatim inside <code>run()</code>. The source marbles come from <code>hot()</code>/<code>cold()</code>, the actual output from the capture, the subscription log the same way. <code>rxjs/testing</code> is plain TypeScript with no Node dependency, so it runs in the browser.</li>
+        <li><b>State becomes frame-based.</b> Instead of a column per source emission, the state holds lanes with events <code>{ frame, kind, value }</code>, optional spans (subscription, window, cancelled window), a total frame count and a <code>playhead</code>. The reducer gets one new action, <code>TICK</code>, that advances the playhead; the reveal effect that already exists drives it.</li>
+        <li><b>Operator lanes are opt-in annotations.</b> Source and output lanes are generic for any spec. The window lane is produced by a small per-operator annotator (debounceTime, auditTime, delay, throttleTime share one: "a duration that starts at an input frame"). Operators without a time component simply have no middle lane, and the arrow drops straight from source to output.</li>
+        <li><b>A third page, <code>spec.html</code>,</b> next to the diamond and glitch pages. Later, a spec picker whose entries are the marble strings copied verbatim from the rxjs repo's spec files.</li>
+      </ul>
+    </div>
+    <div style="display:grid;gap:12px">
+      <h2>Choices to make</h2>
+      <ul>
+        <li><b>30 px / 26 px marble</b> (shown) or <b>40 px / 32 px marble</b>, which keeps today's marble size and makes values easier to read but stretches a 13-frame spec to 520 px. The scale is one config value either way.</li>
+        <li><b>Playback speed.</b> 400 ms per frame reads well for short specs; a scrubber on the ruler would help with long ones.</li>
+        <li><b>Mismatch styling.</b> Rings without fills and fills without rings in red is the proposal; a failing spec would then look like its diff.</li>
+        <li><b>Where cancelled windows go.</b> Dashed stub with a cross on the operator lane (shown), or fade them out entirely after the newer value arrives.</li>
+      </ul>
+    </div>
+  </section>
+
+  <p class="rec">
+    Recommendation: build <code>spec.html</code> around the real <code>TestScheduler</code> with <code>stepMs: 1</code>, <code>timeScale: 30</code> and a 26 px marble, start with this debounceTime spec, and add the window annotator for the time-based operators first. The diamond page keeps its real-time mode; both share one coordinate rule.
+  </p>
+</div>
+
+<script>
+  (function () {
+    // ---- a small marble parser (run-mode subset: -, values, |, #, ^, !, (), spaces ignored) ----
+    function parse(marbles) {
+      var events = [], frame = 0, i = 0, inGroup = false, groupFrame = 0;
+      for (; i < marbles.length; i++) {
+        var ch = marbles[i];
+        if (ch === ' ') continue;
+        if (ch === '(') { inGroup = true; groupFrame = frame; frame++; continue; }
+        if (ch === ')') { inGroup = false; frame++; continue; }
+        var at = inGroup ? groupFrame : frame;
+        if (ch === '-') { /* frame */ }
+        else if (ch === '|') events.push({ frame: at, kind: 'complete' });
+        else if (ch === '#') events.push({ frame: at, kind: 'error' });
+        else if (ch === '^') events.push({ frame: at, kind: 'subscribe' });
+        else if (ch === '!') events.push({ frame: at, kind: 'unsubscribe' });
+        else events.push({ frame: at, kind: 'next', value: ch });
+        frame++;
+      }
+      return { events: events, frames: frame };
+    }
+
+    var SRC = '-a--bc--d---|', SUBS = '^-----------!', EXPECTED = '---a---c--d-|', T = 2, PLAYHEAD = 7;
+    // What the real TestScheduler recorded for e1.pipe(debounceTime(2)):
+    var ACTUAL = [{ frame: 3, kind: 'next', value: 'a' }, { frame: 7, kind: 'next', value: 'c' }, { frame: 10, kind: 'next', value: 'd' }, { frame: 12, kind: 'complete' }];
+
+    var PX = 30, M = 26, HEAD_W = 250, RULER_H = 38, ROW_H = 110;
+    var src = parse(SRC), exp = parse(EXPECTED), subs = parse(SUBS);
+    var FRAMES = Math.max(src.frames, exp.frames);
+    var ROWS = [
+      { label: 'e1', sub: "hot('" + SRC + "')", strip: SRC },
+      { label: 'debounceTime(t)', sub: "t = time('--|') = 2 frames", strip: '' },
+      { label: 'expected vs actual', sub: "'" + EXPECTED + "'", strip: EXPECTED }
+    ];
+
+    var mock = document.getElementById('mock');
+    var W = HEAD_W + FRAMES * PX, H = RULER_H + ROWS.length * ROW_H;
+    mock.style.width = W + 'px'; mock.style.height = H + 'px';
+
+    function el(cls, style, html) {
+      var d = document.createElement('div'); d.className = cls;
+      for (var k in style) d.style[k] = typeof style[k] === 'number' ? style[k] + 'px' : style[k];
+      if (html !== undefined) d.innerHTML = html;
+      mock.appendChild(d); return d;
+    }
+    var fx = function (f) { return HEAD_W + f * PX; };
+    var rowY = function (r) { return RULER_H + r * ROW_H; };
+    var baseY = function (r) { return rowY(r) + 60; };     // lane baseline
+    var marbleTop = function (r) { return baseY(r) - M / 2; };
+    var fut = function (f) { return f > PLAYHEAD ? ' future' : ''; };
+
+    // Ruler + bands
+    el('abs ruler-num', { left: 12, top: 12 }, 'frame · ms');
+    for (var f = 0; f < FRAMES; f++) {
+      el('abs ' + (f % 2 ? 'band-odd' : 'band-even'), { left: fx(f), top: RULER_H, width: PX, height: H - RULER_H });
+      el('abs tick', { left: fx(f), top: RULER_H - 8, height: 8 });
+      el('abs ruler-num' + (f % 5 === 0 ? ' major' : ''), { left: fx(f) + 4, top: 12 }, String(f));
+    }
+    el('abs tick', { left: fx(FRAMES), top: RULER_H - 8, height: 8 });
+
+    // Rows
+    ROWS.forEach(function (row, r) {
+      el('abs rowline', { left: 0, top: rowY(r), width: W });
+      el('abs lane-label', { left: 12, top: rowY(r) + 40 }, row.label);
+      el('abs lane-sub', { left: 12, top: rowY(r) + 60 }, row.sub);
+      el('abs baseline', { left: HEAD_W, top: baseY(r) - 1, width: W - HEAD_W });
+      // character strip: the raw marble string, one char per frame
+      for (var i = 0, f2 = 0; i < row.strip.length; i++) {
+        if (row.strip[i] === ' ') continue;
+        el('abs charstrip' + (f2 <= PLAYHEAD ? ' hi' : ''), { left: fx(f2), top: rowY(r) + 8, width: PX }, row.strip[i]);
+        f2++;
+      }
+    });
+    el('abs rowline', { left: 0, top: H - 1, width: W });
+
+    function marble(r, ev, cls) {
+      el('abs marble ' + cls + fut(ev.frame), { left: fx(ev.frame) + 2, top: marbleTop(r) }, ev.value);
+    }
+    function completeBar(r, f) {
+      el('abs complete' + fut(f), { left: fx(f) + PX / 2 - 1, top: baseY(r) - 18, height: 36 });
+    }
+
+    // Row 0: source + subscription
+    src.events.forEach(function (ev) {
+      if (ev.kind === 'next') marble(0, ev, 'source');
+      if (ev.kind === 'complete') completeBar(0, ev.frame);
+    });
+    var sFrom = subs.events.filter(function (e) { return e.kind === 'subscribe'; })[0].frame;
+    var sTo = subs.events.filter(function (e) { return e.kind === 'unsubscribe'; })[0].frame;
+    el('abs subbar', { left: fx(sFrom) + PX / 2, top: baseY(0) + 26, width: (sTo - sFrom) * PX });
+    el('abs subglyph', { left: fx(sFrom) + PX / 2 - 4, top: baseY(0) + 30 }, '^');
+    el('abs subglyph', { left: fx(sTo) + PX / 2 - 3, top: baseY(0) + 30 }, '!');
+
+    // Row 1: debounce windows, derived from the source events and t
+    var nexts = src.events.filter(function (e) { return e.kind === 'next'; });
+    nexts.forEach(function (ev, i) {
+      var next = nexts[i + 1];
+      var cancelledAt = next && next.frame < ev.frame + T ? next.frame : null;
+      var end = cancelledAt !== null ? cancelledAt : ev.frame + T;
+      var x0 = fx(ev.frame) + PX / 2, x1 = fx(end) + PX / 2;
+      // drop from source marble to the window start
+      el('abs drop' + fut(ev.frame), { left: x0, top: baseY(0) + 13, height: baseY(1) - baseY(0) - 13 });
+      if (cancelledAt !== null) {
+        el('abs window cancelled' + fut(ev.frame), { left: x0, top: baseY(1) - 1, width: x1 - x0 });
+        el('abs cross' + fut(cancelledAt), { left: x1 - 5, top: baseY(1) - 9 }, '×');
+      } else {
+        el('abs window' + fut(ev.frame), { left: x0, top: baseY(1) - 2, width: x1 - x0 });
+        // arrow from window end down to the output lane
+        el('abs arrow' + fut(end), { left: x1 - 9, top: baseY(1) + 8 },
+          '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 2v17M5 12l7 7 7-7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+      }
+    });
+
+    // Row 2: expected rings, actual fills
+    exp.events.forEach(function (ev) {
+      if (ev.kind === 'next') marble(2, ev, 'expected');
+      if (ev.kind === 'complete') completeBar(2, ev.frame);
+    });
+    ACTUAL.forEach(function (ev) {
+      if (ev.kind === 'next' && ev.frame <= PLAYHEAD) marble(2, ev, 'actual');
+    });
+
+    // Future dimming + playhead
+    el('abs dim', { left: fx(PLAYHEAD + 1), top: RULER_H, width: W - fx(PLAYHEAD + 1), height: H - RULER_H });
+    el('abs playhead', { left: fx(PLAYHEAD + 1) - 1, top: RULER_H - 8, height: H - RULER_H + 8 });
+    el('abs playhead-lbl', { left: fx(PLAYHEAD + 1) - 34, top: H - 24 }, 'frame ' + PLAYHEAD);
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>rxjs-visualizer · spec</title>
+  </head>
+  <body>
+    <nav class="rx-nav">
+      <a href="./index.html">Diamond</a>
+      <a href="./glitch.html">Glitch (work in progress)</a>
+      <a class="is-current" href="./spec.html">Spec: debounceTime</a>
+    </nav>
+    <p class="rx-note">
+      <strong id="spec-title"></strong> — the rxjs marble test, run through the real <code>TestScheduler</code>.
+      One frame is one column; expected values are rings, actual values are fills.
+    </p>
+    <div id="app"></div>
+    <script type="module" src="/src/spec.ts"></script>
+  </body>
+</html>
